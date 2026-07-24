@@ -33,6 +33,16 @@ MAX_YAW_RATE = 2.0     # rad/s at a full normalized yaw command
 TAKEOFF_THROTTLE = 0.5
 LAND_THROTTLE = -0.3
 
+# SI body-velocity setpoint limits for send_body_velocity (true m/s / rad/s, not
+# normalized like send_pcmd). Keep BODY_MAX_SPEED at or below the driver's mux.yaml
+# max_speed for the autonomy path; raise only for open spaces.
+BODY_MAX_SPEED = 1.0        # m/s cap applied to each body-velocity axis
+BODY_MAX_YAW_RATE = 2.0     # rad/s cap on yaw rate
+
+
+def _clamp(value, limit):
+    return max(-limit, min(limit, float(value)))
+
 # Absolute local setpoint frame; mav_frame in config/mavros_px4.yaml is LOCAL_NED,
 # so position targets are anchored to the EKF origin, not offsets from the pose.
 SETPOINT_FRAME_ID = "map"
@@ -110,6 +120,21 @@ class FlightReal(Flight):
         self.__twist.twist.linear.y = float(-roll) * MAX_SPEED
         self.__twist.twist.linear.z = float(throttle) * MAX_SPEED
         self.__twist.twist.angular.z = float(-yaw) * MAX_YAW_RATE
+
+    def send_body_velocity(self, v_forward: float, v_right: float, v_up: float,
+                           yaw_rate: float = 0.0) -> None:
+        """Body-frame velocity setpoint in SI units: forward/right/up in m/s and yaw_rate
+        in rad/s (clockwise positive). Published straight to MAVROS as a body TwistStamped,
+        clamped to BODY_MAX_SPEED / BODY_MAX_YAW_RATE. Unlike send_pcmd this carries true
+        m/s -- no [-1, 1] normalization -- so autonomy code can reason in real units.
+        Requires OFFBOARD; the safety pilot overrides by leaving it."""
+        # roll/yaw sign match send_pcmd: the MAVROS body frame is ENU (linear.y left-positive,
+        # angular.z CCW-positive) while these args are right-positive and clockwise-positive.
+        self.__mode = _MODE_VELOCITY
+        self.__twist.twist.linear.x = _clamp(v_forward, BODY_MAX_SPEED)
+        self.__twist.twist.linear.y = -_clamp(v_right, BODY_MAX_SPEED)
+        self.__twist.twist.linear.z = _clamp(v_up, BODY_MAX_SPEED)
+        self.__twist.twist.angular.z = -_clamp(yaw_rate, BODY_MAX_YAW_RATE)
 
     def takeoff(self) -> None:
         """Command PX4's automatic takeoff and let the flight controller fly the

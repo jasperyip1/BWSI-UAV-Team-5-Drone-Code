@@ -24,6 +24,15 @@ _GOTO_ALT_KP = 0.45         # throttle per meter of altitude error
 _GOTO_TILT_LIMIT = 0.3      # horizontal tilt cap
 _GOTO_THROTTLE_LIMIT = 0.5
 
+# Inner loop for send_body_velocity: the sim's send_pcmd is a TILT command, so a body
+# velocity setpoint is turned into tilt (and vertical velocity into throttle) here -- the
+# job the real flight controller does in hardware. Mirrors neo_lab's send_velocity mapping.
+_VEL_KP = 0.3              # tilt per (m/s) of horizontal velocity error
+_VZ_MPS = 12.0            # throttle scale: ~12 m/s of vertical velocity per unit throttle
+_VEL_TILT_LIMIT = 0.5    # keep tilt gentle: sim attitude response is fast and high-authority
+_VEL_THROTTLE_LIMIT = 0.5
+_VEL_MAX_YAW_RATE = 2.0   # rad/s mapped to a full normalized yaw command
+
 
 def _clamp(value, limit):
     return max(-limit, min(limit, value))
@@ -48,6 +57,19 @@ class FlightSim(Flight):
                 pitch, roll, yaw, throttle,
             )
         )
+
+    def send_body_velocity(self, v_forward: float, v_right: float, v_up: float,
+                           yaw_rate: float = 0.0) -> None:
+        """Body-frame velocity setpoint in SI units (m/s, rad/s). The sim's send_pcmd is a
+        tilt command, so an inner P loop converts the velocity error to tilt and the vertical
+        velocity to throttle -- matching what the real flight controller does, so the same
+        call drives the same motion on sim and real."""
+        vx, vy, vz = (float(v) for v in self.__drone.physics.get_linear_velocity())  # right, up, fwd
+        pitch = _clamp(_VEL_KP * (v_forward - vz), _VEL_TILT_LIMIT)
+        roll = _clamp(_VEL_KP * (v_right - vx), _VEL_TILT_LIMIT)
+        throttle = _clamp(v_up / _VZ_MPS, _VEL_THROTTLE_LIMIT)
+        yaw = _clamp(yaw_rate / _VEL_MAX_YAW_RATE, 1.0)
+        self.send_pcmd(pitch, roll, yaw, throttle)
 
     def set_max_speed(self, max_speed: float = 0.25) -> None:
         assert (

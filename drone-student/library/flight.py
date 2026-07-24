@@ -65,6 +65,34 @@ class Flight(abc.ABC):
         self.send_pcmd(0, 0, 0, 0)
 
     @abc.abstractmethod
+    def send_body_velocity(
+        self, v_forward: float, v_right: float, v_up: float, yaw_rate: float = 0.0
+    ) -> None:
+        """
+        Commands a body-frame velocity setpoint in SI units.
+
+        Args:
+            v_forward: Forward speed in m/s (positive = ahead).
+            v_right: Rightward speed in m/s (positive = drone's right).
+            v_up: Vertical speed in m/s (positive = up).
+            yaw_rate: Turn rate in rad/s (positive = clockwise / nose-right).
+
+        Note:
+            Unlike send_pcmd, these are true metric velocities, not normalized
+            [-1, 1] stick values. On the real drone this publishes a body-frame
+            velocity straight to the flight controller (which closes the velocity
+            loop) and requires OFFBOARD; in simulation an inner loop converts the
+            velocity error to tilt, so the same call behaves the same way in both.
+            Each axis is clamped to a backend speed limit.
+
+        Example::
+
+            # Fly forward at 0.6 m/s while yawing right to follow a line
+            uav.flight.send_body_velocity(0.6, 0.0, 0.0, 0.8)
+        """
+        pass
+
+    @abc.abstractmethod
     def takeoff(self) -> None:
         """
         Commands the drone to take off and climb, letting the flight controller
