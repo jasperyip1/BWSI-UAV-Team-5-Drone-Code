@@ -1,0 +1,3 @@
+[submodule "drone-student/labs"]
+	path = drone-student/labs
+	url = https://github.com/jasperyip1/labs
