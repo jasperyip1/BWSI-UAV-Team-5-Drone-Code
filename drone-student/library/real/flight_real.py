@@ -6,11 +6,14 @@ MIT BWSI Autonomous Drone Racing Course - UAV Neo
 
 File Name: flight_real.py
 File Description: Contains the Flight module of the drone_core library.
-Publishes setpoints directly to MAVROS. Velocity commands (send_pcmd / takeoff)
-go to /mavros/setpoint_velocity/cmd_vel; position commands (goto_position) go to
+Publishes setpoints directly to MAVROS. Velocity commands (send_pcmd) go to
+/mavros/setpoint_velocity/cmd_vel; position commands (goto_position) go to
 /mavros/setpoint_position/local for PX4's position controller. Only one setpoint
-type streams at a time. Does NOT arm or enter OFFBOARD - the safety pilot does
-that on the RC transmitter and retains override by leaving OFFBOARD.
+type streams at a time. takeoff() and land() instead command PX4's native
+AUTO.TAKEOFF / AUTO.LAND modes through the set_mode service and let the flight
+controller own the vertical maneuver; start_offboard() switches back to OFFBOARD
+so streamed setpoints regain control. Does NOT arm - the safety pilot does that on
+the RC transmitter and retains override by leaving OFFBOARD.
 """
 
 from flight import Flight
@@ -34,9 +37,13 @@ LAND_THROTTLE = -0.3
 # so position targets are anchored to the EKF origin, not offsets from the pose.
 SETPOINT_FRAME_ID = "map"
 
-# PX4 mode for autonomous landing, commanded through the set_mode service. Verify
-# the service name against `ros2 service list` on the Pi if landing does nothing.
+# PX4 modes commanded through the set_mode service. AUTO.TAKEOFF flies the climb to
+# the MIS_TAKEOFF_ALT parameter; AUTO.LAND owns the descent; OFFBOARD hands control
+# back to streamed setpoints. Verify the names against `ros2 service list` /
+# `ros2 topic echo /mavros/state` on the Pi if a mode switch does nothing.
+TAKEOFF_MODE = "AUTO.TAKEOFF"
 LAND_MODE = "AUTO.LAND"
+OFFBOARD_MODE = "OFFBOARD"
 
 # 20 Hz; PX4 drops OFFBOARD if setpoints stop for longer than COM_OF_LOSS_T.
 _PUBLISH_PERIOD_S = 0.05
@@ -44,6 +51,7 @@ _PUBLISH_PERIOD_S = 0.05
 _MODE_VELOCITY = "velocity"
 _MODE_POSITION = "position"
 _MODE_LAND = "land"
+_MODE_TAKEOFF = "takeoff"
 
 
 class FlightReal(Flight):
@@ -104,13 +112,43 @@ class FlightReal(Flight):
         self.__twist.twist.angular.z = float(-yaw) * MAX_YAW_RATE
 
     def takeoff(self) -> None:
-        """Send ascending velocity setpoints. The safety pilot must arm and switch
-        to OFFBOARD before the drone will actually lift off."""
-        self.__mode = _MODE_VELOCITY
-        self.__twist.twist.linear.x = 0.0
-        self.__twist.twist.linear.y = 0.0
-        self.__twist.twist.linear.z = TAKEOFF_THROTTLE * MAX_SPEED
-        self.__twist.twist.angular.z = 0.0
+        """Command PX4's automatic takeoff and let the flight controller fly the
+        climb (to the MIS_TAKEOFF_ALT parameter). The safety pilot must have armed
+        the drone first. Once airborne, call start_offboard() to hand control back
+        to streamed setpoints. Streams nothing while PX4 owns the climb.
+
+        Falls back to an ascending velocity setpoint if the set_mode service is not
+        available (the drone then only lifts off once the pilot is in OFFBOARD)."""
+        self.__land_requested = False
+        if self.__set_mode.service_is_ready():
+            request = SetMode.Request()
+            request.custom_mode = TAKEOFF_MODE
+            self.__set_mode.call_async(request)
+            self.__mode = _MODE_TAKEOFF
+        else:
+            self.__node.get_logger().warn(
+                "set_mode unavailable; climbing with a velocity setpoint"
+            )
+            self.__mode = _MODE_VELOCITY
+            self.__twist.twist.linear.x = 0.0
+            self.__twist.twist.linear.y = 0.0
+            self.__twist.twist.linear.z = TAKEOFF_THROTTLE * MAX_SPEED
+            self.__twist.twist.angular.z = 0.0
+
+    def start_offboard(self) -> None:
+        """Request PX4 OFFBOARD mode so streamed setpoints regain control after an
+        AUTO.TAKEOFF (or any non-OFFBOARD mode). Velocity or position setpoints must
+        already be streaming (call send_pcmd / goto_position for ~0.5 s first) or PX4
+        rejects the switch. Safe to call repeatedly until state.is_offboard() is True.
+        The safety pilot still overrides by leaving OFFBOARD."""
+        if self.__set_mode.service_is_ready():
+            request = SetMode.Request()
+            request.custom_mode = OFFBOARD_MODE
+            self.__set_mode.call_async(request)
+        else:
+            self.__node.get_logger().warn(
+                "set_mode unavailable; cannot switch to OFFBOARD"
+            )
 
     def land(self) -> None:
         """Command PX4's autonomous landing once, then let the flight controller
@@ -154,6 +192,6 @@ class FlightReal(Flight):
             elif self.__mode == _MODE_VELOCITY:
                 self.__twist.header.stamp = self.__clock.now().to_msg()
                 self.__velocity_pub.publish(self.__twist)
-            # _MODE_LAND: PX4 owns the descent; stream nothing.
+            # _MODE_TAKEOFF / _MODE_LAND: PX4 owns the climb/descent; stream nothing.
         except Exception as e:
             self.__node.get_logger().error(f'Flight publish failed: {e}')

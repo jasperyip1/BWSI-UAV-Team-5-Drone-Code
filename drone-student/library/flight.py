@@ -67,17 +67,37 @@ class Flight(abc.ABC):
     @abc.abstractmethod
     def takeoff(self) -> None:
         """
-        Sends ascending setpoints to the mux.
+        Commands the drone to take off and climb, letting the flight controller
+        fly the climb.
 
         Note:
-            The safety pilot must arm the motors and switch to OFFBOARD mode
-            on the RC transmitter before the drone will actually lift off.
-            This function only sets the velocity command — it does not arm
-            or change flight modes.
+            The safety pilot must arm the motors first; this does not arm. On the
+            real drone this commands PX4's AUTO.TAKEOFF mode (the flight controller
+            climbs to its takeoff-altitude parameter); in simulation it arms the
+            motors and imparts an upward impulse. Once airborne, call
+            start_offboard() to hand control back to streamed setpoints.
 
         Example::
 
             uav.flight.takeoff()
+        """
+        pass
+
+    def start_offboard(self) -> None:
+        """
+        Switches control back to streamed setpoints after a native takeoff or
+        landing.
+
+        Note:
+            On the real drone this requests PX4 OFFBOARD mode; setpoints must
+            already be streaming (send a few send_pcmd / goto_position commands
+            first) or PX4 rejects the switch. Poll uav.state.is_offboard() to know
+            when it has taken. The default is a no-op for backends (like the
+            simulator) that have no separate offboard mode.
+
+        Example::
+
+            uav.flight.start_offboard()
         """
         pass
 
