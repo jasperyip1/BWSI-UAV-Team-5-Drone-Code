@@ -5,13 +5,13 @@
 /drone-venv/
 
 # Simulator cloned per-platform by setup.sh / update.sh
-/UAVNeo-Simulator/
+/UAVNeo-Simulator
 
-# Library cloned from uav-neo-library
-/drone-student/library/
+# # Library cloned from uav-neo-library
+# /drone-student/library/
 
-# Labs cloned from the selected curriculum repo
-/drone-student/labs/
+# # Labs cloned from the selected curriculum repo
+# /drone-student/labs/
 
 # Per-machine runtime and local config
 /drone-student/scripts/.config
