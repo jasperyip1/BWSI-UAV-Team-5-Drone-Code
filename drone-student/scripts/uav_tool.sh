@@ -230,18 +230,23 @@ drone() {
         echo "Usage: drone sync [labs|library|all]"
         return 1
       fi
-      local valid_command=false
+      local sync_targets=""
       if [ "$2" = "library" ] || [ "$2" = "all" ]; then
         echo "Copying your local copy of the drone library to your drone (${DRONE_IP})..."
-        rsync -azP --delete "$DRONE_ABSOLUTE_PATH"/library "${DRONE_USER}@${DRONE_IP}:${DRONE_DESTINATION_PATH}"
-        valid_command=true
+        rsync -azP --delete --exclude __pycache__ "$DRONE_ABSOLUTE_PATH"/library "${DRONE_USER}@${DRONE_IP}:${DRONE_DESTINATION_PATH}"
+        sync_targets="${sync_targets} library"
       fi
       if [ "$2" = "labs" ] || [ "$2" = "all" ]; then
         echo "Copying your local copy of the drone labs to your drone (${DRONE_IP})..."
-        rsync -azP --delete "$DRONE_ABSOLUTE_PATH"/labs "${DRONE_USER}@${DRONE_IP}:${DRONE_DESTINATION_PATH}"
-        valid_command=true
+        rsync -azP --delete --exclude __pycache__ "$DRONE_ABSOLUTE_PATH"/labs "${DRONE_USER}@${DRONE_IP}:${DRONE_DESTINATION_PATH}"
+        sync_targets="${sync_targets} labs"
       fi
-      if [ "$valid_command" = false ]; then
+      if [ -n "$sync_targets" ]; then
+        echo "Clearing stale Python cache on the drone..."
+        # shellcheck disable=SC2086
+        ssh "${DRONE_USER}@${DRONE_IP}" "find ${DRONE_DESTINATION_PATH} -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null; find ${DRONE_DESTINATION_PATH} -name '*.pyc' -delete 2>/dev/null"
+        echo "Sync complete."
+      else
         echo "'${2}' is not a recognized sync target. Options: labs, library, all"
       fi
       ;;
