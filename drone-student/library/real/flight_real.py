@@ -26,7 +26,7 @@ from mavros_msgs.srv import SetMode
 # The mux node used to apply the speed cap. With the autonomy path going straight
 # to MAVROS, the library enforces it. These must match neo_lab.REAL_MAX_SPEED and
 # config/mux.yaml so a normalized command maps to the same m/s as under teleop.
-MAX_SPEED = 2.0        # m/s at a full normalized linear command
+MAX_SPEED = 1.0        # m/s at a full normalized linear command
 MAX_YAW_RATE = 2.0     # rad/s at a full normalized yaw command
 
 # Normalized vertical commands for the takeoff/land velocity setpoints.
@@ -137,28 +137,13 @@ class FlightReal(Flight):
         self.__twist.twist.angular.z = -_clamp(yaw_rate, BODY_MAX_YAW_RATE)
 
     def takeoff(self) -> None:
-        """Command PX4's automatic takeoff and let the flight controller fly the
-        climb (to the MIS_TAKEOFF_ALT parameter). The safety pilot must have armed
-        the drone first. Once airborne, call start_offboard() to hand control back
-        to streamed setpoints. Streams nothing while PX4 owns the climb.
-
-        Falls back to an ascending velocity setpoint if the set_mode service is not
-        available (the drone then only lifts off once the pilot is in OFFBOARD)."""
-        self.__land_requested = False
-        if self.__set_mode.service_is_ready():
-            request = SetMode.Request()
-            request.custom_mode = TAKEOFF_MODE
-            self.__set_mode.call_async(request)
-            self.__mode = _MODE_TAKEOFF
-        else:
-            self.__node.get_logger().warn(
-                "set_mode unavailable; climbing with a velocity setpoint"
-            )
-            self.__mode = _MODE_VELOCITY
-            self.__twist.twist.linear.x = 0.0
-            self.__twist.twist.linear.y = 0.0
-            self.__twist.twist.linear.z = TAKEOFF_THROTTLE * MAX_SPEED
-            self.__twist.twist.angular.z = 0.0
+        """Send ascending velocity setpoints. The safety pilot must arm and switch
+        to OFFBOARD before the drone will actually lift off."""
+        self.__mode = _MODE_VELOCITY
+        self.__twist.twist.linear.x = 0.0
+        self.__twist.twist.linear.y = 0.0
+        self.__twist.twist.linear.z = TAKEOFF_THROTTLE * MAX_SPEED
+        self.__twist.twist.angular.z = 0.0
 
     def start_offboard(self) -> None:
         """Request PX4 OFFBOARD mode so streamed setpoints regain control after an
