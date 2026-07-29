@@ -26,7 +26,7 @@ from mavros_msgs.srv import SetMode
 # The mux node used to apply the speed cap. With the autonomy path going straight
 # to MAVROS, the library enforces it. These must match neo_lab.REAL_MAX_SPEED and
 # config/mux.yaml so a normalized command maps to the same m/s as under teleop.
-MAX_SPEED = 2.0        # m/s at a full normalized linear command
+MAX_SPEED = 1.0        # m/s at a full normalized linear command
 MAX_YAW_RATE = 2.0     # rad/s at a full normalized yaw command
 
 # Normalized vertical commands for the takeoff/land velocity setpoints.
