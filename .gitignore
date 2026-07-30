@@ -14,7 +14,6 @@
 # /drone-student/labs/
 
 # Per-machine runtime and local config
-/drone-student/scripts/.config
 /drone-student/scripts/.local_bashrc.sh
 /drone-student/scripts/.logs/
 
